@@ -15,9 +15,9 @@ namespace KiwiBuzzer
     {
         
         // This is used as a header for the packet payload to identify the app
-        private const static string HeaderRequest = "Request";
-        private const static string HeaderRespond= "Respond";
-        private const static int HeadLength = System.Math.Max(HeaderRespond.Length, HeaderRequest.Length);
+        private const string HeaderRequest = "Request";
+        private const string HeaderRespond= "Respond";
+        private const int HeadLength = 7;
 
         private static MACBase _macBase;
 
@@ -43,10 +43,10 @@ namespace KiwiBuzzer
             var msgByte = packet.Payload;
             var msgChar = Encoding.UTF8.GetChars(msgByte);
             var msgStr = new string(msgChar);
-            if (msgStr.Substring(0, HeadLength) == HeaderResponse)
+            if (msgStr.Substring(0, HeadLength) == HeaderRespond)
             {
-                string payload = msgStr.Substring(Header.Length);
-                String[] timeStrings = payload.Split(" ");
+                string payload = msgStr.Substring(HeaderRespond.Length);
+                String[] timeStrings = payload.Split(' ');
                 long requstTime, recvRequestTime;
                 long respondTime = sentTime; 
                 long recvResponseTime = recvTime;
@@ -62,9 +62,11 @@ namespace KiwiBuzzer
 
                 _N++;
                 long rtt = (recvResponseTime  - requstTime) - (respondTime - recvRequestTime);
-                _offset = (offset * (N - 1) + (recvRequestTime - requstTime) - (rtt / 2)) / N;
-            } else if (msgStr.Substring(0, HeaderLength) == HeaderRequest) {
-                RadioSend(sentTime.toString() + " " + recvTime.toString(), packet.Src);
+                _offset = (_offset * (_N - 1) + (recvRequestTime - requstTime) - (rtt / 2)) / _N;
+            }
+            else if (msgStr.Substring(0, HeadLength) == HeaderRequest)
+            {
+                RadioSend(sentTime.ToString() + " " + recvTime.ToString(), packet.Src);
             } 
             return;
         }
