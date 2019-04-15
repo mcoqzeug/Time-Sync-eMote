@@ -4,7 +4,6 @@ using System.Text;
 using System.Threading;
 using Microsoft.SPOT;
 
-// using Samraksh.AppNote.Utility;
 using Samraksh.eMote.Net;
 using Samraksh.eMote.Net.MAC;
 using Samraksh.eMote.SensorBoard;
@@ -19,25 +18,67 @@ namespace KiwiBuzzer
         private const string HeaderRespond= "Respond";
         private const int HeadLength = 7;
 
+        private const int syncFrequency = 3;
+        private const int buzzerOpenTime = 1000;
+        private const int buzzerOffTime = 5000;
+
         private static MACBase _macBase;
 
         static int _N = 0;
         static long _offset = 0;
+        private static readonly EnhancedEmoteLcd Lcd = new EnhancedEmoteLcd();
+
+        private static DateTime _startTime;
         
         public static void Main()
         {
+            _startTime = DateTime.Now; 
+            Debug.EnableGCMessages(false);  // We don't want to see garbage collector messages in the Output window	
+            Debug.Print(VersionInfo.VersionBuild(Assembly.GetExecutingAssembly()));
+
+             // Display a welcome message
+            Lcd.Write("Hola");
+            Thread.Sleep(4000);
+             _macBase = RadioConfiguration.GetMAC();
+            _macBase.OnReceive += RadioReceive;
+            _macBase.OnNeighborChange += MacBase_OnNeighborChange;
+
+             Debug.Print("=======================================");
+            var info = "MAC Type: " + _macBase.GetType()
+                + ", Channel: " + _macBase.MACRadioObj.Channel
+                + ", Power: " + _macBase.MACRadioObj.TxPower
+                + ", Radio Address: " + _macBase.MACRadioObj.RadioAddress
+                + ", Radio Type: " + _macBase.MACRadioObj.RadioName
+                + ", Neighbor Liveness Delay: " + _macBase.NeighborLivenessDelay;
+            Debug.Print(info);
+            Debug.Print("=======================================");
 	        while(true)
 	        {
+                RadioSend("time Sync");
+                Thread.Sleep(buzzerOffTime + (int)_offset);
+                for (int i = 0; i < syncFrequency; i++) {
+                    //Buzzer.On();
+                    Debug.Print("local time: " + time2Long(DateTime.Now));
+                    Thread.Sleep(buzzerOpenTime);
+                    //Buzzer.Off();
+                    Thread.Sleep(buzzerOffTime);
+                }
 	        }
         }
 
-        private static long time2Long(DateTime dateTime) {
-            return (dateTime.ToUniversalTime().Ticks - 621355968000000000) / 10000;
+        private static long time2Long(DateTime dateTime) 
+        {
+            return (dateTime.ToUniversalTime().Ticks - _startTime.ToUniversalTime().Ticks) / 10000;
+        }
+
+        private static long time2LongNoCalibration(DateTime dateTime)
+        {
+            return (dateTime.ToUniversalTime().Ticks) / 10000;
         }
 
         private static void RadioReceive(IMAC macBase, DateTime receiveDateTime, Packet packet)
         {
-            long sentTime = time2Long(packet.SenderEventTimeStamp); // t1 for requesting message, t3 for response message
+            long sentTime = time2LongNoCalibration(packet.SenderEventTimeStamp); // t1 for requesting message, t3 for response message
             long recvTime = time2Long(receiveDateTime); // t4 for cacluate time offset, t2 for respond
             Debug.Print("Received " + packet.Payload.Length + " bytes from " + packet.Src);
             var msgByte = packet.Payload;
@@ -92,6 +133,28 @@ namespace KiwiBuzzer
             var toSendByte = Encoding.UTF8.GetBytes(HeaderRespond + toSend);
             Debug.Print("Sending response message \"" + toSend + "\" to " + address);
             _macBase.Send(address, toSendByte, 0, (ushort)toSendByte.Length, DateTime.Now);
+        }
+
+        static void MacBase_OnNeighborChange(IMAC macInstance, DateTime time)
+        {
+            var neighborList = MACBase.NeighborListArray();
+            macInstance.NeighborList(neighborList);
+            PrintNeighborList("Neighbor list CHANGE for Node [" + _macBase.MACRadioObj.RadioAddress + "]: ", neighborList);
+        }
+
+        private static void PrintNeighborList(string prefix, ushort[] neighborList)
+        {
+            PrintNumericVals(prefix, neighborList);
+        }
+
+        public static void PrintNumericVals(string prefix, ushort[] messageEx)
+        {
+            var msgBldr = new StringBuilder(prefix);
+            foreach (var val in messageEx)
+            {
+                msgBldr.Append(val + " ");
+            }
+            Debug.Print(msgBldr.ToString());
         }
     }
 }
