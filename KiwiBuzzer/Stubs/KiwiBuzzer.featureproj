@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <FeatureName>KiwiBuzzer</FeatureName>
+    <Guid>{32c92c58-d774-49d0-b1be-15b0ba1d54ca}</Guid>
+    <Description>&lt;Add Feature Description Here&gt;</Description>
+    <Groups />
+    <KIWIBUZZER_FEATUREPROJ>True</KIWIBUZZER_FEATUREPROJ>
+  </PropertyGroup>
+  <ItemGroup>
+    <DriverLibs Include="KiwiBuzzer.$(LIB_EXT)" />
+    <InteropFeature Include="KiwiBuzzer" />
+    <MMP_DAT_CreateDatabase Include="$(BUILD_TREE_CLIENT)\pe\$(ENDIANNESS)\KiwiBuzzer.pe" />
+    <RequiredProjects Include="C:\Users\kevin\dev\Time-Sync-eMote\KiwiBuzzer\Stubs\dotnetmf.proj" />
+  </ItemGroup>
+</Project>

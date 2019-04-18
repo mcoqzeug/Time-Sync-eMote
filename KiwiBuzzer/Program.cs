@@ -19,14 +19,18 @@ namespace KiwiBuzzer
         private const int HeadLength = 7;
 
         private const int syncFrequency = 3;
-        private const int buzzerOpenTime = 1000;
-        private const int buzzerOffTime = 5000;
+        private const int buzzerOpenTime = 500;
+        private const int buzzerOffTime = 9000;
+
+       // private const int cycleTime = (syncFrequency + 1) * buzzerOffTime + syncFrequency * buzzerOpenTime;
 
         private static MACBase _macBase;
 
-        static int _N = 0;
+        static int _N = 1;
         static long _offset = 0;
         private static readonly EnhancedEmoteLcd Lcd = new EnhancedEmoteLcd();
+        static int _nodeSynced = 0;
+        static int _nodeResponsed = 0;
 
         private static DateTime _startTime;
         
@@ -55,12 +59,23 @@ namespace KiwiBuzzer
 	        while(true)
 	        {
                 RadioSend("time Sync");
-                Thread.Sleep(buzzerOffTime + (int)_offset);
+                long time1 = time2Long(DateTime.Now);
+                while (_N != _nodeSynced + 1 || _N != _nodeResponsed + 1);
+                long time2 = time2Long(DateTime.Now);
+                int resetTime = buzzerOffTime  - (int)(time2 - time1) % buzzerOffTime;
+                Thread.Sleep(resetTime);
+                _offset = (_offset / _N) % buzzerOffTime;
+                Debug.Print("offset is " + _offset + "  _N is " + _N);
+                Thread.Sleep(buzzerOffTime - (int)_offset);
+                _N = 1;
+                _nodeSynced = 0;
+                _nodeResponsed = 0;
+                _offset = 0;
                 for (int i = 0; i < syncFrequency; i++) {
-                    //Buzzer.On();
+                    Buzzer.On();
                     Debug.Print("local time: " + time2Long(DateTime.Now));
                     Thread.Sleep(buzzerOpenTime);
-                    //Buzzer.Off();
+                    Buzzer.Off();
                     Thread.Sleep(buzzerOffTime);
                 }
 	        }
@@ -100,14 +115,14 @@ namespace KiwiBuzzer
                 {
                     return;
                 }
-
-                _N++;
                 long rtt = (recvResponseTime  - requstTime) - (respondTime - recvRequestTime);
-                _offset = (_offset * (_N - 1) + (recvRequestTime - requstTime) - (rtt / 2)) / _N;
+                _offset += (recvRequestTime - requstTime) - (rtt / 2);
+                _nodeSynced++;
             }
             else if (msgStr.Substring(0, HeadLength) == HeaderRequest)
             {
                 RadioSend(sentTime.ToString() + " " + recvTime.ToString(), packet.Src);
+                _nodeResponsed++;
             } 
             return;
         }
@@ -124,6 +139,7 @@ namespace KiwiBuzzer
                     break;
                 }
                 Debug.Print("Sending request message  \"" + toSend + "\" to " + theNeighbor);
+                _N = _N + 1;
                 _macBase.Send(theNeighbor, toSendByte, 0, (ushort)toSendByte.Length, DateTime.Now);
             }
         }
