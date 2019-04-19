@@ -32,6 +32,7 @@ namespace KiwiBuzzer
         private static readonly EnhancedEmoteLcd Lcd = new EnhancedEmoteLcd();
         static int _nodeSynced = 0;
         static int _nodeResponsed = 0;
+        static bool _sentLock = true;
 
         private static DateTime _startTime;
         
@@ -59,6 +60,7 @@ namespace KiwiBuzzer
             Debug.Print("=======================================");
 	        while(true)
 	        {
+                while (!_sentLock);
                 RadioSend(time2Long(DateTime.Now).ToString());
                 long time1 = time2Long(DateTime.Now);
                 while (_N != _nodeSynced + 1 || _N != _nodeResponsed + 1);
@@ -73,10 +75,10 @@ namespace KiwiBuzzer
                 _nodeResponsed = 0;
                 _offsetSum = 0;
                 for (int i = 0; i < syncFrequency; i++) {
-                    Buzzer.On();
+                    //Buzzer.On();
                     Debug.Print("local time: " + time2Long(DateTime.Now));
                     Thread.Sleep(buzzerOpenTime);
-                    Buzzer.Off();
+                   // Buzzer.Off();
                     Thread.Sleep(buzzerOffTime);
                 }
 	        }
@@ -90,6 +92,7 @@ namespace KiwiBuzzer
         private static void RadioReceive(IMAC macBase, DateTime receiveDateTime, Packet packet)
         {
             long recvTime = time2Long(receiveDateTime); // t4 for cacluate time offset, t2 for respond
+            long currentTime;
             Debug.Print("Received " + packet.Payload.Length + " bytes from " + packet.Src);
             var msgByte = packet.Payload;
             var msgChar = Encoding.UTF8.GetChars(msgByte);
@@ -118,12 +121,13 @@ namespace KiwiBuzzer
             }
             else if (msgStr.Substring(0, HeadLength) == HeaderRequest)
             {
+                _sentLock = false;
                 string sentTimeStr = msgStr.Substring(HeaderRespond.Length);
-                string currenTimeStr = time2Long(DateTime.Now).ToString();
-                RadioSend(sentTimeStr + " " + recvTime.ToString() + " " + currenTimeStr, packet.Src);
+                currentTime = time2Long(DateTime.Now);
                 _nodeResponsed++;
+                RadioSend(sentTimeStr + " " + recvTime.ToString() + " " + currentTime.ToString(), (ushort)packet.Src);
+                _sentLock = true;
             } 
-            return;
         }
 
         private static void RadioSend(string toSend)
