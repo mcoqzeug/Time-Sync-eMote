@@ -145,6 +145,8 @@ C:\Users\kevin\dev\Time-Sync-eMote\KiwiBuzzer\bin\Debug\Samraksh_eMote_Kiwi.pdb
 C:\Users\kevin\dev\Time-Sync-eMote\KiwiBuzzer\bin\Debug\Samraksh_eMote_Kiwi.xml
 C:\Users\kevin\dev\Time-Sync-eMote\KiwiBuzzer\bin\Debug\Samraksh_eMote_Net.pdb
 C:\Users\kevin\dev\Time-Sync-eMote\KiwiBuzzer\bin\Debug\Samraksh_eMote_Net.xml
+C:\Users\kevin\dev\Time-Sync-eMote\KiwiBuzzer\obj\Debug\KiwiBuzzer.csprojResolveAssemblyReference.cache
+C:\Users\kevin\dev\Time-Sync-eMote\KiwiBuzzer\obj\Debug\TinyCLR_DebugReferences.cache
 C:\Users\kevin\dev\Time-Sync-eMote\KiwiBuzzer\obj\Debug\KiwiBuzzer.Resources.resources
 C:\Users\kevin\dev\Time-Sync-eMote\KiwiBuzzer\obj\Debug\KiwiBuzzer.csproj.GenerateResource.Cache
 C:\Users\kevin\dev\Time-Sync-eMote\KiwiBuzzer\obj\Debug\KiwiBuzzer.Resources.tinyresources

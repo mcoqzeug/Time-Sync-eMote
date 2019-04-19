@@ -28,6 +28,7 @@ namespace KiwiBuzzer
 
         static int _N = 1;
         static long _offset = 0;
+        static long _offsetSum = 0;
         private static readonly EnhancedEmoteLcd Lcd = new EnhancedEmoteLcd();
         static int _nodeSynced = 0;
         static int _nodeResponsed = 0;
@@ -58,19 +59,19 @@ namespace KiwiBuzzer
             Debug.Print("=======================================");
 	        while(true)
 	        {
-                RadioSend("time Sync");
+                RadioSend(time2Long(DateTime.Now).ToString());
                 long time1 = time2Long(DateTime.Now);
                 while (_N != _nodeSynced + 1 || _N != _nodeResponsed + 1);
                 long time2 = time2Long(DateTime.Now);
-                int resetTime = buzzerOffTime  - (int)(time2 - time1) % buzzerOffTime;
-                Thread.Sleep(resetTime);
-                _offset = (_offset / _N) % buzzerOffTime;
+                long offsetDistence = (_offsetSum / _N) % buzzerOffTime - _offset;
+                _offset = (_offsetSum / _N) % buzzerOffTime;
                 Debug.Print("offset is " + _offset + "  _N is " + _N);
-                Thread.Sleep(buzzerOffTime - (int)_offset);
+                int resetTime = (buzzerOffTime - (int)(time2 - time1 + (int)offsetDistence) % buzzerOffTime);
+                Thread.Sleep(resetTime);
                 _N = 1;
                 _nodeSynced = 0;
                 _nodeResponsed = 0;
-                _offset = 0;
+                _offsetSum = 0;
                 for (int i = 0; i < syncFrequency; i++) {
                     Buzzer.On();
                     Debug.Print("local time: " + time2Long(DateTime.Now));
@@ -86,42 +87,40 @@ namespace KiwiBuzzer
             return (dateTime.ToUniversalTime().Ticks - _startTime.ToUniversalTime().Ticks) / 10000;
         }
 
-        private static long time2LongNoCalibration(DateTime dateTime)
-        {
-            return (dateTime.ToUniversalTime().Ticks) / 10000;
-        }
-
         private static void RadioReceive(IMAC macBase, DateTime receiveDateTime, Packet packet)
         {
-            long sentTime = time2LongNoCalibration(packet.SenderEventTimeStamp); // t1 for requesting message, t3 for response message
             long recvTime = time2Long(receiveDateTime); // t4 for cacluate time offset, t2 for respond
             Debug.Print("Received " + packet.Payload.Length + " bytes from " + packet.Src);
             var msgByte = packet.Payload;
             var msgChar = Encoding.UTF8.GetChars(msgByte);
             var msgStr = new string(msgChar);
+            Debug.Print("receive message is " + msgStr.Substring(0, HeadLength) + " " + msgStr.Substring(HeadLength));
             if (msgStr.Substring(0, HeadLength) == HeaderRespond)
             {
                 string payload = msgStr.Substring(HeaderRespond.Length);
                 String[] timeStrings = payload.Split(' ');
                 long requstTime, recvRequestTime;
-                long respondTime = sentTime; 
+                long respondTime; 
                 long recvResponseTime = recvTime;
                 try
                 {
                     requstTime = long.Parse(timeStrings[0]);
                     recvRequestTime = long.Parse(timeStrings[1]);
+                    respondTime = long.Parse(timeStrings[2]);
                 }
                 catch
                 {
                     return;
                 }
                 long rtt = (recvResponseTime  - requstTime) - (respondTime - recvRequestTime);
-                _offset += (recvRequestTime - requstTime) - (rtt / 2);
+                _offsetSum += (recvRequestTime - requstTime) - (rtt / 2);
                 _nodeSynced++;
             }
             else if (msgStr.Substring(0, HeadLength) == HeaderRequest)
             {
-                RadioSend(sentTime.ToString() + " " + recvTime.ToString(), packet.Src);
+                string sentTimeStr = msgStr.Substring(HeaderRespond.Length);
+                string currenTimeStr = time2Long(DateTime.Now).ToString();
+                RadioSend(sentTimeStr + " " + recvTime.ToString() + " " + currenTimeStr, packet.Src);
                 _nodeResponsed++;
             } 
             return;
@@ -140,7 +139,7 @@ namespace KiwiBuzzer
                 }
                 Debug.Print("Sending request message  \"" + toSend + "\" to " + theNeighbor);
                 _N = _N + 1;
-                _macBase.Send(theNeighbor, toSendByte, 0, (ushort)toSendByte.Length, DateTime.Now);
+                _macBase.Send(theNeighbor, toSendByte, 0, (ushort)toSendByte.Length);
             }
         }
 
@@ -148,7 +147,7 @@ namespace KiwiBuzzer
         {
             var toSendByte = Encoding.UTF8.GetBytes(HeaderRespond + toSend);
             Debug.Print("Sending response message \"" + toSend + "\" to " + address);
-            _macBase.Send(address, toSendByte, 0, (ushort)toSendByte.Length, DateTime.Now);
+            _macBase.Send(address, toSendByte, 0, (ushort)toSendByte.Length);
         }
 
         static void MacBase_OnNeighborChange(IMAC macInstance, DateTime time)
