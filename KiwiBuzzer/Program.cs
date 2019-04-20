@@ -1,5 +1,7 @@
 using System;
 using System.Reflection;
+using System.Collections;
+
 using System.Text;
 using System.Threading;
 using Microsoft.SPOT;
@@ -12,8 +14,6 @@ namespace KiwiBuzzer
 {
     public class Program
     {
-        
-        // This is used as a header for the packet payload to identify the app
         private const string HeaderRequest = "Request";
         private const string HeaderRespond= "Respond";
         private const int HeadLength = 7;
@@ -21,9 +21,6 @@ namespace KiwiBuzzer
         private const int syncFrequency = 3;
         private const int buzzerOpenTime = 500;
         private const int buzzerOffTime = 9000;
-
-       // private const int cycleTime = (syncFrequency + 1) * buzzerOffTime + syncFrequency * buzzerOpenTime;
-
         private static MACBase _macBase;
 
         static int _N = 1;
@@ -33,33 +30,46 @@ namespace KiwiBuzzer
         static int _nodeSynced = 0;
         static int _nodeResponsed = 0;
         static bool _sentLock = true;
+        static Hashtable _responsesRecv = new Hashtable();
+        static Hashtable _requestsRecv = new Hashtable();
+        static Hashtable _noResponseDelayTimers = new Hashtable();
+
+        private const int NoResponseInterval = 1000;  
+        private static readonly TimerCallback NoResponseDelayTimerCallback = noResponseDelay_Timeout;
 
         private static DateTime _startTime;
         
         public static void Main()
         {
-            _startTime = DateTime.Now; 
-            Debug.EnableGCMessages(false);  // We don't want to see garbage collector messages in the Output window	
+            _startTime = DateTime.Now;
+            Debug.EnableGCMessages(false);  //We don't want to see garbage collector messages in the Output window	
             Debug.Print(VersionInfo.VersionBuild(Assembly.GetExecutingAssembly()));
 
-             // Display a welcome message
-            Lcd.Write("Hola");
             Thread.Sleep(4000);
-             _macBase = RadioConfiguration.GetMAC();
+            _macBase = RadioConfiguration.GetMAC();
             _macBase.OnReceive += RadioReceive;
             _macBase.OnNeighborChange += MacBase_OnNeighborChange;
 
-             Debug.Print("=======================================");
+            Debug.Print("=======================================");
             var info = "MAC Type: " + _macBase.GetType()
-                + ", Channel: " + _macBase.MACRadioObj.Channel
-                + ", Power: " + _macBase.MACRadioObj.TxPower
-                + ", Radio Address: " + _macBase.MACRadioObj.RadioAddress
-                + ", Radio Type: " + _macBase.MACRadioObj.RadioName
-                + ", Neighbor Liveness Delay: " + _macBase.NeighborLivenessDelay;
+                + ",\nChannel: " + _macBase.MACRadioObj.Channel
+                + ",\nPower: " + _macBase.MACRadioObj.TxPower
+                + ",\nRadio Address: " + _macBase.MACRadioObj.RadioAddress
+                + ",\nRadio Type: " + _macBase.MACRadioObj.RadioName
+                + ",\nNeighbor Liveness Delay: " + _macBase.NeighborLivenessDelay;
             Debug.Print(info);
             Debug.Print("=======================================");
+
 	        while(true)
 	        {
+
+                _N = MACBase.NeighborListArray().Length;
+                _nodeSynced = 0;
+                _nodeResponsed = 0;
+                _offsetSum = 0;
+                _requestsRecv.Clear();
+                _responsesRecv.Clear();
+
                 while (!_sentLock);
                 RadioSend(time2Long(DateTime.Now).ToString());
                 long time1 = time2Long(DateTime.Now);
@@ -67,18 +77,15 @@ namespace KiwiBuzzer
                 long time2 = time2Long(DateTime.Now);
                 long offsetDistence = (_offsetSum / _N) % buzzerOffTime - _offset;
                 _offset = (_offsetSum / _N) % buzzerOffTime;
-                Debug.Print("offset is " + _offset + "  _N is " + _N);
                 int resetTime = (buzzerOffTime - (int)(time2 - time1 + (int)offsetDistence) % buzzerOffTime);
+                Debug.Print("_offset: " + _offset + ",  _N: " + _N + ", resetTime: "
+                    + resetTime + ", offsetDistence: " + offsetDistence);
                 Thread.Sleep(resetTime);
-                _N = 1;
-                _nodeSynced = 0;
-                _nodeResponsed = 0;
-                _offsetSum = 0;
                 for (int i = 0; i < syncFrequency; i++) {
                     //Buzzer.On();
-                    Debug.Print("local time: " + time2Long(DateTime.Now));
+                    Debug.Print("Beep. Local time: " + time2Long(DateTime.Now));
                     Thread.Sleep(buzzerOpenTime);
-                   // Buzzer.Off();
+                    //Buzzer.Off();
                     Thread.Sleep(buzzerOffTime);
                 }
 	        }
@@ -91,20 +98,24 @@ namespace KiwiBuzzer
 
         private static void RadioReceive(IMAC macBase, DateTime receiveDateTime, Packet packet)
         {
-            long recvTime = time2Long(receiveDateTime); // t4 for cacluate time offset, t2 for respond
+            long recvTime = time2Long(receiveDateTime);  //t4 for cacluate time offset, t2 for respond
             long currentTime;
-            Debug.Print("Received " + packet.Payload.Length + " bytes from " + packet.Src);
             var msgByte = packet.Payload;
             var msgChar = Encoding.UTF8.GetChars(msgByte);
             var msgStr = new string(msgChar);
-            Debug.Print("receive message is " + msgStr.Substring(0, HeadLength) + " " + msgStr.Substring(HeadLength));
+            ushort recvFromAddress = packet.Src;
+            Debug.Print("Received: \"" + msgStr + "\"" + " from " + packet.Src);
+            if (msgStr.Length < HeadLength) {
+                return;
+            }
+
             if (msgStr.Substring(0, HeadLength) == HeaderRespond)
             {
+                ((Timer)(_noResponseDelayTimers[recvFromAddress])).Change(Timeout.Infinite, Timeout.Infinite);
                 string payload = msgStr.Substring(HeaderRespond.Length);
+                _responsesRecv[recvFromAddress] = payload;
                 String[] timeStrings = payload.Split(' ');
-                long requstTime, recvRequestTime;
-                long respondTime; 
-                long recvResponseTime = recvTime;
+                long requstTime, recvRequestTime, respondTime, recvResponseTime = recvTime;
                 try
                 {
                     requstTime = long.Parse(timeStrings[0]);
@@ -115,7 +126,7 @@ namespace KiwiBuzzer
                 {
                     return;
                 }
-                long rtt = (recvResponseTime  - requstTime) - (respondTime - recvRequestTime);
+                long rtt = (recvResponseTime - requstTime) - (respondTime - recvRequestTime);
                 _offsetSum += (recvRequestTime - requstTime) - (rtt / 2);
                 _nodeSynced++;
             }
@@ -123,11 +134,13 @@ namespace KiwiBuzzer
             {
                 _sentLock = false;
                 string sentTimeStr = msgStr.Substring(HeaderRespond.Length);
+                _requestsRecv[recvFromAddress] = sentTimeStr;
                 currentTime = time2Long(DateTime.Now);
+                string response = sentTimeStr + " " + recvTime.ToString() + " " + currentTime.ToString();
+                RadioSend(response, recvFromAddress);
                 _nodeResponsed++;
-                RadioSend(sentTimeStr + " " + recvTime.ToString() + " " + currentTime.ToString(), (ushort)packet.Src);
                 _sentLock = true;
-            } 
+            }
         }
 
         private static void RadioSend(string toSend)
@@ -142,8 +155,14 @@ namespace KiwiBuzzer
                     break;
                 }
                 Debug.Print("Sending request message  \"" + toSend + "\" to " + theNeighbor);
-                _N = _N + 1;
                 _macBase.Send(theNeighbor, toSendByte, 0, (ushort)toSendByte.Length);
+                if (_noResponseDelayTimers[theNeighbor] == null)
+                {
+                    _noResponseDelayTimers[theNeighbor] = new Timer(noResponseDelay_Timeout, null, NoResponseInterval, Timeout.Infinite);
+                }
+                else {
+                    ((Timer)(_noResponseDelayTimers[theNeighbor])).Change(NoResponseInterval, Timeout.Infinite);
+                }
             }
         }
 
@@ -174,6 +193,13 @@ namespace KiwiBuzzer
                 msgBldr.Append(val + " ");
             }
             Debug.Print(msgBldr.ToString());
+        }
+
+        static void noResponseDelay_Timeout(object obj)
+        {
+            RadioSend(time2Long(DateTime.Now).ToString());
+            // Restart the no-response timer & display a message
+            Debug.Print("No message received ...");
         }
     }
 }

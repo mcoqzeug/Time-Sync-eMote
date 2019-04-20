@@ -53,6 +53,7 @@
     <Reference Include="Samraksh_eMote_Net">
       <HintPath>..\eMote\Samraksh_eMote_Net\Samraksh_eMote_Net.dll</HintPath>
     </Reference>
+    <Reference Include="System" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Resources.resx">
