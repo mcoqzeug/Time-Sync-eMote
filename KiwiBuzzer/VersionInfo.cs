@@ -11,7 +11,7 @@
 using System;
 using System.Reflection;
 
-namespace KiwiBuzzer
+namespace TimeSync
 {
     /// <summary>
     /// Get version info

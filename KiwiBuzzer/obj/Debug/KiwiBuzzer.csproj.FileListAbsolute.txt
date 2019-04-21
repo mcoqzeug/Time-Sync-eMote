@@ -155,3 +155,5 @@ C:\Users\kevin\dev\Time-Sync-eMote\KiwiBuzzer\obj\Debug\le\KiwiBuzzer.pe
 C:\Users\kevin\dev\Time-Sync-eMote\KiwiBuzzer\obj\Debug\le\KiwiBuzzer.pdbx
 C:\Users\kevin\dev\Time-Sync-eMote\KiwiBuzzer\obj\Debug\KiwiBuzzer.exe
 C:\Users\kevin\dev\Time-Sync-eMote\KiwiBuzzer\obj\Debug\KiwiBuzzer.pdb
+C:\Users\kevin\dev\Time-Sync-eMote\KiwiBuzzer\obj\Debug\KiwiBuzzer.csprojResolveAssemblyReference.cache
+C:\Users\kevin\dev\Time-Sync-eMote\KiwiBuzzer\obj\Debug\TinyCLR_DebugReferences.cache

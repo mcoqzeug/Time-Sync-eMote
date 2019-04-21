@@ -1,16 +1,7 @@
-/*=========================
- * eMote LCD Enhanced Class
- *  Define the LCD with enhanced interface
- * Versions
- *  1.0 Initial Version
- *  1.1 Made Display more efficient
- *  1.2 Migrated to new eMote namespace and changed Display to Write and obseleted Display
-=========================*/
-
 using System;
 using Samraksh.eMote.DotNow;
 
-namespace KiwiBuzzer
+namespace TimeSync
 {
 
 	/// <summary>

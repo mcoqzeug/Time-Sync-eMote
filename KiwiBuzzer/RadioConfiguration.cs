@@ -19,7 +19,7 @@ using Samraksh.eMote.Net;
 using Samraksh.eMote.Net.MAC;
 using Samraksh.eMote.Net.Radio;
 
-namespace KiwiBuzzer
+namespace TimeSync
 {
     public static class RadioConfiguration
     {

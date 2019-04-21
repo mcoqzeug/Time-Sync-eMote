@@ -10,7 +10,7 @@ using Samraksh.eMote.Net;
 using Samraksh.eMote.Net.MAC;
 using Samraksh.eMote.SensorBoard;
 
-namespace KiwiBuzzer
+namespace TimeSync
 {
     public class Program
     {
@@ -18,26 +18,66 @@ namespace KiwiBuzzer
         private const string HeaderRespond= "Respond";
         private const int HeadLength = 7;
 
-        private const int syncFrequency = 3;
-        private const int buzzerOpenTime = 500;
-        private const int buzzerOffTime = 9000;
+        private const int beepEvery = 5000;
+        private const int requestEvery = 10000;
+        private const int epsilon = 100;
+        private const int buzzerOnTime = 500;
+
         private static MACBase _macBase;
 
-        static int _N = 1;
         static long _offset = 0;
         static long _offsetSum = 0;
-        private static readonly EnhancedEmoteLcd Lcd = new EnhancedEmoteLcd();
-        static int _nodeSynced = 0;
-        static int _nodeResponsed = 0;
-        static bool _sentLock = true;
-        static Hashtable _responsesRecv = new Hashtable();
-        static Hashtable _requestsRecv = new Hashtable();
-        static Hashtable _noResponseDelayTimers = new Hashtable();
+        static long _realOffset = 0;
 
-        private const int NoResponseInterval = 1000;  
-        private static readonly TimerCallback NoResponseDelayTimerCallback = noResponseDelay_Timeout;
+        //private static readonly EnhancedEmoteLcd Lcd = new EnhancedEmoteLcd();
+        static int _numResponded = 0;
 
         private static DateTime _startTime;
+
+        static long getLocalTime()
+        {
+            return time2Long(DateTime.Now) + _offset;
+        }
+
+        // beep thread
+        static void Beep()
+        {
+            while(true) {
+                if ((getLocalTime() % beepEvery) < epsilon)
+                {
+                    Buzzer.On();
+                    Debug.Print("Beep. Local time: " + getLocalTime() + " offset is " + _offset);
+                    Thread.Sleep(buzzerOnTime);
+                    Buzzer.Off();
+                }
+            }
+        }
+
+        // request thread
+        static void Request()
+        {
+            while (true)
+            {
+                if ((getLocalTime() % requestEvery) < epsilon)
+                {
+                    // initialize _offsetSum
+                    _offsetSum = 0;
+                    _numResponded = 0;
+                    
+                    // send request
+                    RadioSend(getLocalTime().ToString());
+
+                    // wait for reply
+                    Thread.Sleep(500);
+
+                    // update offset
+                    _offset += (_numResponded == 0) ? 0 : (_offsetSum / (_numResponded + 1));
+                    _realOffset += (_numResponded == 0) ? 0 : (_offsetSum / (_numResponded));
+                    //Debug.Print("real_offset: " + real_offset + " responded number: " + _numResponded);
+                   
+                }
+            }
+        }
         
         public static void Main()
         {
@@ -60,35 +100,10 @@ namespace KiwiBuzzer
             Debug.Print(info);
             Debug.Print("=======================================");
 
-	        while(true)
-	        {
-
-                _N = MACBase.NeighborListArray().Length;
-                _nodeSynced = 0;
-                _nodeResponsed = 0;
-                _offsetSum = 0;
-                _requestsRecv.Clear();
-                _responsesRecv.Clear();
-
-                while (!_sentLock);
-                RadioSend(time2Long(DateTime.Now).ToString());
-                long time1 = time2Long(DateTime.Now);
-                while (_N != _nodeSynced + 1 || _N != _nodeResponsed + 1);
-                long time2 = time2Long(DateTime.Now);
-                long offsetDistence = (_offsetSum / _N) % buzzerOffTime - _offset;
-                _offset = (_offsetSum / _N) % buzzerOffTime;
-                int resetTime = (buzzerOffTime - (int)(time2 - time1 + (int)offsetDistence) % buzzerOffTime);
-                Debug.Print("_offset: " + _offset + ",  _N: " + _N + ", resetTime: "
-                    + resetTime + ", offsetDistence: " + offsetDistence);
-                Thread.Sleep(resetTime);
-                for (int i = 0; i < syncFrequency; i++) {
-                    //Buzzer.On();
-                    Debug.Print("Beep. Local time: " + time2Long(DateTime.Now));
-                    Thread.Sleep(buzzerOpenTime);
-                    //Buzzer.Off();
-                    Thread.Sleep(buzzerOffTime);
-                }
-	        }
+            Thread beep = new Thread(Beep);
+            Thread request = new Thread(Request);
+            beep.Start();
+            request.Start();
         }
 
         private static long time2Long(DateTime dateTime) 
@@ -98,48 +113,54 @@ namespace KiwiBuzzer
 
         private static void RadioReceive(IMAC macBase, DateTime receiveDateTime, Packet packet)
         {
-            long recvTime = time2Long(receiveDateTime);  //t4 for cacluate time offset, t2 for respond
-            long currentTime;
+            /*
+             * t1: when the local node sent a request
+             * t2: when a partner node received the request
+             * t3: when the partner node sent a response
+             * t4: when then local node received the response
+             * 
+             * requset: "Request t1"
+             * respond: "Respond t1 t2 t3"
+             */
+            long recvTime = time2Long(receiveDateTime) + _offset;  // could be t2 or t4
+            
             var msgByte = packet.Payload;
             var msgChar = Encoding.UTF8.GetChars(msgByte);
             var msgStr = new string(msgChar);
+            
             ushort recvFromAddress = packet.Src;
-            Debug.Print("Received: \"" + msgStr + "\"" + " from " + packet.Src);
+            
+            Debug.Print("\tReceived: \"" + msgStr + "\"" + " from " + packet.Src);
+            
             if (msgStr.Length < HeadLength) {
                 return;
             }
 
             if (msgStr.Substring(0, HeadLength) == HeaderRespond)
             {
-                ((Timer)(_noResponseDelayTimers[recvFromAddress])).Change(Timeout.Infinite, Timeout.Infinite);
                 string payload = msgStr.Substring(HeaderRespond.Length);
-                _responsesRecv[recvFromAddress] = payload;
                 String[] timeStrings = payload.Split(' ');
-                long requstTime, recvRequestTime, respondTime, recvResponseTime = recvTime;
+                long t1, t2, t3, t4 = recvTime;
                 try
                 {
-                    requstTime = long.Parse(timeStrings[0]);
-                    recvRequestTime = long.Parse(timeStrings[1]);
-                    respondTime = long.Parse(timeStrings[2]);
+                    t1 = long.Parse(timeStrings[0]);
+                    t2 = long.Parse(timeStrings[1]);
+                    t3 = long.Parse(timeStrings[2]);
                 }
                 catch
                 {
                     return;
                 }
-                long rtt = (recvResponseTime - requstTime) - (respondTime - recvRequestTime);
-                _offsetSum += (recvRequestTime - requstTime) - (rtt / 2);
-                _nodeSynced++;
+
+                _offsetSum += (t2 - t1 + t3 - t4) / 2;
+                _numResponded++;
             }
             else if (msgStr.Substring(0, HeadLength) == HeaderRequest)
             {
-                _sentLock = false;
-                string sentTimeStr = msgStr.Substring(HeaderRespond.Length);
-                _requestsRecv[recvFromAddress] = sentTimeStr;
-                currentTime = time2Long(DateTime.Now);
-                string response = sentTimeStr + " " + recvTime.ToString() + " " + currentTime.ToString();
+                string t1Str = msgStr.Substring(HeaderRespond.Length);
+                long t3 = getLocalTime();
+                string response = t1Str + " " + recvTime.ToString() + " " + t3.ToString();
                 RadioSend(response, recvFromAddress);
-                _nodeResponsed++;
-                _sentLock = true;
             }
         }
 
@@ -154,22 +175,15 @@ namespace KiwiBuzzer
                 {
                     break;
                 }
-                Debug.Print("Sending request message  \"" + toSend + "\" to " + theNeighbor);
+                Debug.Print("\tSending request message  \"" + toSend + "\" to " + theNeighbor);
                 _macBase.Send(theNeighbor, toSendByte, 0, (ushort)toSendByte.Length);
-                if (_noResponseDelayTimers[theNeighbor] == null)
-                {
-                    _noResponseDelayTimers[theNeighbor] = new Timer(noResponseDelay_Timeout, null, NoResponseInterval, Timeout.Infinite);
-                }
-                else {
-                    ((Timer)(_noResponseDelayTimers[theNeighbor])).Change(NoResponseInterval, Timeout.Infinite);
-                }
             }
         }
 
         private static void RadioSend(string toSend, ushort address)
         {
             var toSendByte = Encoding.UTF8.GetBytes(HeaderRespond + toSend);
-            Debug.Print("Sending response message \"" + toSend + "\" to " + address);
+            Debug.Print("\tSending response message \"" + toSend + "\" to " + address);
             _macBase.Send(address, toSendByte, 0, (ushort)toSendByte.Length);
         }
 
@@ -177,7 +191,7 @@ namespace KiwiBuzzer
         {
             var neighborList = MACBase.NeighborListArray();
             macInstance.NeighborList(neighborList);
-            PrintNeighborList("Neighbor list CHANGE for Node [" + _macBase.MACRadioObj.RadioAddress + "]: ", neighborList);
+            PrintNeighborList("\t\tNeighbor list CHANGE for Node [" + _macBase.MACRadioObj.RadioAddress + "]: ", neighborList);
         }
 
         private static void PrintNeighborList(string prefix, ushort[] neighborList)
@@ -193,13 +207,6 @@ namespace KiwiBuzzer
                 msgBldr.Append(val + " ");
             }
             Debug.Print(msgBldr.ToString());
-        }
-
-        static void noResponseDelay_Timeout(object obj)
-        {
-            RadioSend(time2Long(DateTime.Now).ToString());
-            // Restart the no-response timer & display a message
-            Debug.Print("No message received ...");
         }
     }
 }
